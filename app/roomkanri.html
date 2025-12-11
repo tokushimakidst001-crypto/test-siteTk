@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CSV書き換え — Yochyamarumaru</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <h1 class="logo">Yochyamarumaru</h1>
+      <nav class="nav">
+        <a href="main.html">Home</a>
+        <a href="https://tokushima-kids.hatenablog.jp/" target="_blank" rel="noopener noreferrer">ブログ</a>
+        <a href="../app.html">自作（AI）アプリ</a>
+      </nav>
+      <button id="menuToggle" class="menu-toggle" aria-label="メニュー">☰</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="container">
+      <h2>部屋管理アプリ</h2>
+      <p>部屋の予約などを管理することができます。</p>
+
+      <h3>ファイルの説明</h3>
+      <ol>
+        <li>room_reservation\templates\form.html・・・画面のHTMLです。このあたりをいじると見栄えをよくできます。</li>
+        <li>room_reservation\app.py・・・始めるときはこれを実行してください。</li>
+        <li>room_reservation\clear.py・・・データをCSVに残していますが、そのデータをお掃除します。</li>
+        <li>room_reservation\gui.py・・・予約一覧がでています。</li>
+        <li>room_reservation\reservations.csv・・・予約のデータが保存されています。</li>
+      </ol>
+
+      <h3>使い方</h3>
+      <ol>
+        <li>メモ帳などでapp.pyを開きIpアドレスをいまお使いの端末のIpアドレスに置き換えてください。</li>
+        <li>部屋などを追加する場合はfrom.htmlをメモ帳などで開き部屋を追加削除してください。</li>
+        <li>room_reservation\gui.pyを実行すると予約一覧が表示されます。</li>
+
+      </ol>
+      
+      <h3>ダウンロード</h3>
+      <p><a class="btn" href="https://drive.google.com/drive/folders/1WcRersrLRN_40TBddTQEOfy-DY7k6Zw_?usp=sharing" target="_blank" rel="noopener noreferrer">部屋管理アプリをダウンロード</a></p>
+
+      <p class="note">注意: 実行できなかった場合(app.pyを押してもすぐコマンドプロンプトが表示されて消える)はエラーコードをAIなどに読み込ませてください。</p>
+
+      <p><a class="btn" href="../app.html">アプリ一覧に戻る</a></p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <small>Yochyamaruによるテストサイト</small>
+    </div>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>
