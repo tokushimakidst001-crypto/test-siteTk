@@ -1,0 +1,26 @@
+/* シンプルなリセット */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { font-family: "Segoe UI", Meiryo, sans-serif; line-height: 1.6; color: #222; background: #f7f7f8; }
+.container { max-width: 980px; margin: 0 auto; padding: 1rem; }
+.site-header { background: #ffffff; border-bottom: 1px solid #e6e6e6; position: sticky; top: 0; z-index: 10; }
+.site-header .container { display: flex; align-items: center; gap: 1rem; }
+.logo { font-size: 1.2rem; color: #111; }
+.nav { margin-left: auto; display: flex; gap: 1rem; }
+.nav a { color: #333; text-decoration: none; padding: 0.5rem; }
+.menu-toggle { display: none; background: none; border: none; font-size: 1.2rem; }
+.hero { background: linear-gradient(180deg,#fff,#f0f4f8); padding: 3rem 0; }
+.hero h2 { font-size: 1.8rem; margin-bottom: 0.5rem; }
+.btn { display: inline-block; background: #0078d4; color: #fff; padding: 0.6rem 1rem; border-radius: 6px; text-decoration: none; }
+.features { padding: 2rem 0; }
+.features ul { list-style: disc; margin-left: 1.2rem; }
+.contact { padding: 2rem 0; }
+.site-footer { background: #fff; border-top: 1px solid #e6e6e6; padding: 1rem 0; text-align: center; }
+
+/* モバイル */
+@media (max-width: 700px) {
+  .nav { display: none; position: absolute; right: 1rem; top: 56px; background: white; border: 1px solid #ddd; flex-direction: column; padding: 0.5rem; }
+  .nav.open { display: flex; }
+  .menu-toggle { display: inline-block; margin-left: auto; }
+  .hero h2 { font-size: 1.4rem; }
+}
