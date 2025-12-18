@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>コメント弾幕ゲーム</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Tailwind CSSを使用しますが、キャンバスの配置はカスタムで行います */
+        body {
+            /* 画面全体を使い、中央揃え */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #1a1a1a; /* ダークな背景 */
+            font-family: 'Inter', sans-serif;
+            color: #fff;
+        }
+
+        #gameCanvas {
+            /* 動画画面をイメージしたデザイン */
+            border: 4px solid #4f46e5; /* 紫色の枠 */
+            box-shadow: 0 0 20px rgba(79, 70, 229, 0.5);
+            background-color: #000000;
+            cursor: pointer; /* プレイアブルであることを示す */
+        }
+
+        .game-container {
+            /* キャンバスの親要素 */
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            max-width: 800px;
+            width: 95%;
+        }
+
+        .title {
+            text-align: center;
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #a78bfa;
+            text-shadow: 0 0 10px rgba(167, 139, 250, 0.7);
+        }
+
+        .controls {
+            text-align: center;
+            color: #ccc;
+        }
+
+        @media (max-width: 600px) {
+            .title {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <h1 class="title">ニコ弾幕迎撃</h1>
+        <div class="controls">
+            移動: WASD/矢印キー | 射撃: Zキー | リスタート: スペースキー or クリック
+        </div>
+        
+        <!-- ゲーム描画用キャンバス -->
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+    </div>
+
+    <script>
+        // --- Firebase/API Placeholder Variables (Do not remove) ---
+        var appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        var firebaseConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+        var initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+        // --------------------------------------------------------
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- ゲーム状態管理 ---
+        let score = 0; // 破壊したコメントの数
+        let isGameOver = false;
+        let comments = []; // コメント（敵）オブジェクトを格納
+        let playerShots = []; // プレイヤー弾オブジェクトを格納
+        let lastSpawnTime = 0;
+        
+        // --- プレイヤーの初期設定 ---
+        let player = {
+            x: canvas.width / 2, 
+            y: canvas.height - 50,
+            radius: 8,
+            speed: 5,
+            color: '#ff0055',
+            fireRate: 150, // 射撃間隔 (ms)
+            lastShotTime: 0
+        };
+
+        // --- コメント（敵）設定 ---
+        const COMMENT_TEXTS = [
+            { text: 'うぽつ', hp: 1 },
+            { text: 'ktkr', hp: 1 },
+            { text: '神曲', hp: 2 },
+            { text: '草', hp: 1 },
+            { text: 'わこつ', hp: 1 },
+            { text: 'ニコニコ', hp: 2 },
+            { text: '最高！', hp: 2 },
+            { text: 'あああああああ', hp: 3 }, // 長いのでHP高め
+            { text: '＼(^o^)／', hp: 3 },
+            { text: 'もっと評価されるべき', hp: 4 },
+            { text: '888888888888888', hp: 5 } // 弾幕系は耐久力最大
+        ];
+        const MIN_ENEMY_SPEED = 1; // 敵（コメント）の最低移動速度 (避けゲーより遅く設定)
+        const MAX_ENEMY_SPEED = 2.5; // 敵（コメント）の最高移動速度
+        // コメント生成間隔を短縮 (1000ms -> 500ms)
+        const SPAWN_INTERVAL = 300; // ミリ秒
+        const COMMENT_FONT_SIZE = 24;
+
+        // キー入力の状態を保持するオブジェクト
+        let keys = {};
+        
+        // --- PlayerShotクラス（プレイヤーの弾） ---
+        class PlayerShot {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 3;
+                // 弾の移動方向を右（X軸方向）に変更
+                this.speedX = -10; 
+                this.speedY = 0; // Y軸方向の移動はなし
+                this.color = '#00ffff'; // シアン色の弾
+                this.damage = 1; // 与えるダメージ
+            }
+
+            update() {
+                // X軸方向に左へ移動
+                this.x -= this.speedX; 
+                // Y軸方向の移動はなし
+                // this.y -= this.speedY; 
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        // --- Commentクラス（敵オブジェクト） ---
+        class Comment {
+            constructor(data, y, speed) {
+                this.text = data.text;
+                this.maxHp = data.hp;
+                this.hp = data.hp;
+                this.x = canvas.width; // 右端からスタート
+                this.y = y;
+                this.speed = speed;
+                this.destroyed = false;
+                
+                // サイズ計測
+                ctx.font = `${COMMENT_FONT_SIZE}px 'Inter', sans-serif`;
+                this.width = ctx.measureText(this.text).width; 
+                this.height = COMMENT_FONT_SIZE;
+            }
+
+            update() {
+                // 敵はゆっくり左へ移動
+                this.x -= this.speed;
+            }
+
+            draw() {
+                // コメントテキスト描画
+                ctx.font = `${COMMENT_FONT_SIZE}px 'Inter', sans-serif`;
+                // HPに応じて色を少し変化させる（ダメージ表現）
+                const healthRatio = this.hp / this.maxHp;
+                ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + 0.5 * healthRatio})`; 
+                ctx.fillText(this.text, this.x, this.y);
+
+                // HPバー描画
+                this.drawHPBar();
+            }
+
+            drawHPBar() {
+                const barWidth = this.width;
+                const barHeight = 4;
+                const healthRatio = this.hp / this.maxHp;
+                const barY = this.y + 5; // コメントの下に表示
+
+                // 背景（HP全体）
+                ctx.fillStyle = '#444';
+                ctx.fillRect(this.x, barY, barWidth, barHeight);
+
+                // 現在のHP
+                if (healthRatio > 0) {
+                    ctx.fillStyle = healthRatio > 0.5 ? '#00ff00' : (healthRatio > 0.2 ? '#ffff00' : '#ff0000');
+                    ctx.fillRect(this.x, barY, barWidth * healthRatio, barHeight);
+                }
+            }
+        }
+
+        // --- 1. イベントリスナー: キーボード入力/リスタート ---
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            e.preventDefault(); 
+            
+            // 射撃 (Zキー)
+            if (e.key === 'z' || e.key === 'Z') {
+                tryShoot();
+            }
+
+            // スペースキーでのリスタート
+            if (isGameOver && e.key === ' ') {
+                restartGame();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+        
+        // クリックでのリスタート
+        canvas.addEventListener('click', () => {
+            if (isGameOver) {
+                restartGame();
+            }
+        });
+
+
+        // --- 2. プレイヤーの更新（移動＆射撃トリガー） ---
+        function tryShoot() {
+            if (isGameOver) return;
+
+            const now = performance.now();
+            if (now - player.lastShotTime > player.fireRate) {
+                // プレイヤーのy座標を基準に、x座標から新しい弾を生成
+                // 弾はプレイヤーのx位置からコメントと同じy座標のラインを撃つように調整しても面白いが、
+                // 今回はプレイヤーの位置から発射し、左へ飛ばすシンプルな実装にする。
+                playerShots.push(new PlayerShot(player.x, player.y)); 
+                player.lastShotTime = now;
+            }
+        }
+
+        function updatePlayer() {
+            // 移動処理
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
+                player.x -= player.speed;
+            }
+            if (keys['ArrowRight'] || keys['d'] || keys['D']) {
+                player.x += player.speed;
+            }
+            if (keys['ArrowUp'] || keys['w'] || keys['W']) {
+                player.y -= player.speed;
+            }
+            if (keys['ArrowDown'] || keys['s'] || keys['S']) {
+                player.y += player.speed;
+            }
+
+            // 画面外に出ないように制限
+            player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+            player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+        }
+
+        // --- 3. プレイヤー弾の更新と衝突判定 ---
+        function updatePlayerShots() {
+            playerShots = playerShots.filter(shot => {
+                shot.update();
+                
+                // 画面左端を超えた弾は削除 (弾の進行方向が左になったため)
+                if (shot.x + shot.radius < 0) {
+                    return false;
+                }
+
+                // コメント（敵）との衝突判定
+                let hitEnemy = false;
+                comments.forEach(comment => {
+                    if (!comment.destroyed && checkShotCollision(shot, comment)) {
+                        comment.hp -= shot.damage; // ダメージを与える
+                        hitEnemy = true;
+                        
+                        if (comment.hp <= 0) {
+                            comment.destroyed = true; // 破壊フラグ
+                            score++; // 破壊スコア加算
+                        }
+                    }
+                });
+
+                return !hitEnemy; // 敵に当たった弾は削除
+            });
+        }
+        
+        // --- 4. コメント生成・更新・衝突判定 ---
+        
+        // 新しいコメント（敵）を生成
+        function spawnComment(timestamp) {
+            if (timestamp - lastSpawnTime > SPAWN_INTERVAL) {
+                // ランダムな敵データを選択
+                const data = COMMENT_TEXTS[Math.floor(Math.random() * COMMENT_TEXTS.length)];
+                
+                // ランダムなY座標を選択
+                const y = Math.random() * (canvas.height - COMMENT_FONT_SIZE * 2) + COMMENT_FONT_SIZE * 1.5;
+                
+                // ランダムな速度を選択
+                const speed = Math.random() * (MAX_ENEMY_SPEED - MIN_ENEMY_SPEED) + MIN_ENEMY_SPEED;
+
+                // 新しいコメント（敵）を作成し、配列に追加
+                comments.push(new Comment(data, y, speed));
+                
+                lastSpawnTime = timestamp;
+            }
+        }
+        
+        // コメント（敵）の位置を更新し、プレイヤーとの衝突判定と画面外の敵削除を行う
+        function updateComments() {
+            comments = comments.filter(comment => {
+                comment.update();
+                
+                // 破壊された敵は削除
+                if (comment.destroyed) {
+                    return false;
+                }
+                
+                // プレイヤー（自機）との衝突判定 (コメントの長方形と自機の円)
+                if (checkPlayerCollision(player, comment)) {
+                    isGameOver = true;
+                    return false; 
+                }
+
+                // 画面左端（x=0）より左に出た敵はゲームオーバーの対象（耐久失敗）
+                if (comment.x + comment.width < 0) {
+                    // 敵を逃してしまったが、迎撃ゲームなので単に削除
+                    return false; 
+                }
+                
+                return true; // 残すコメント
+            });
+        }
+        
+        // --- 5. 衝突判定関数 ---
+
+        // プレイヤー弾 (円) と コメント (長方形) の衝突判定
+        function checkShotCollision(shot, comment) {
+            // 弾の中心座標
+            const cX = shot.x;
+            const cY = shot.y;
+            const radius = shot.radius;
+
+            // コメントの当たり判定座標 (長方形の範囲)
+            const rLeft = comment.x;
+            const rRight = comment.x + comment.width;
+            const rTop = comment.y - comment.height; 
+            const rBottom = comment.y + 4; // HPバーの高さも考慮
+
+            // 弾の中心から長方形に最も近い点を計算 (クランプ処理)
+            const closestX = Math.max(rLeft, Math.min(cX, rRight));
+            const closestY = Math.max(rTop, Math.min(cY, rBottom));
+
+            const distanceX = cX - closestX;
+            const distanceY = cY - closestY;
+
+            const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+            return distanceSquared < (radius * radius);
+        }
+
+        // プレイヤー (円) と コメント (長方形) の衝突判定
+        function checkPlayerCollision(player, comment) {
+            // プレイヤーの中心座標
+            const cX = player.x;
+            const cY = player.y;
+            const radius = player.radius;
+
+            // コメントの当たり判定座標 (長方形の範囲)
+            const rLeft = comment.x;
+            const rRight = comment.x + comment.width;
+            const rTop = comment.y - comment.height; 
+            const rBottom = comment.y + 4; // HPバーの高さも考慮
+
+            // プレイヤーの中心から長方形に最も近い点を計算 (クランプ処理)
+            const closestX = Math.max(rLeft, Math.min(cX, rRight));
+            const closestY = Math.max(rTop, Math.min(cY, rBottom));
+
+            const distanceX = cX - closestX;
+            const distanceY = cY - closestY;
+
+            const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+            return distanceSquared < (radius * radius);
+        }
+        
+
+        // --- 6. 描画処理 ---
+        
+        function drawPlayer() {
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fillStyle = player.color;
+            ctx.fill();
+            ctx.closePath();
+            
+            // 当たり判定の場所を分かりやすくするため、中央に小さな白い点（ヒットボックス）を描画
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fillRect(player.x - 1, player.y - 1, 2, 2); 
+        }
+
+        function drawPlayerShots() {
+            playerShots.forEach(shot => shot.draw());
+        }
+
+        function drawComments() {
+            comments.forEach(comment => comment.draw());
+        }
+
+        function drawHUD() {
+            // スコア表示
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px "Inter", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(`撃破数: ${score}`, 10, 30);
+
+            if (isGameOver) {
+                // ゲームオーバー画面
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = '#ff0055';
+                ctx.font = 'bold 60px "Inter", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 30);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '28px "Inter", sans-serif';
+                ctx.fillText(`最終撃破数: ${score} コメント`, canvas.width / 2, canvas.height / 2 + 20);
+                
+                ctx.fillStyle = '#a78bfa';
+                ctx.font = '20px "Inter", sans-serif';
+                ctx.fillText('画面クリック または スペースキーでリスタート', canvas.width / 2, canvas.height / 2 + 70);
+            }
+        }
+        
+        // --- 7. メインゲームループ ---
+        function gameLoop(timestamp) {
+            if (isGameOver) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawComments(); 
+                drawPlayer();
+                drawPlayerShots();
+                drawHUD();
+                return; 
+            }
+
+            // 1. 画面クリア
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 2. 状態の更新
+            updatePlayer();
+            spawnComment(timestamp);
+            updatePlayerShots();
+            updateComments();
+            
+            // 3. 描画
+            drawPlayerShots();
+            drawComments();
+            drawPlayer();
+            drawHUD();
+
+            // 4. 次のフレームを要求
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- 8. ゲーム開始とリスタートロジック ---
+        function restartGame() {
+            isGameOver = false;
+            score = 0;
+            comments = [];
+            playerShots = [];
+            player.x = canvas.width / 2;
+            player.y = canvas.height - 50;
+            player.lastShotTime = 0;
+            lastSpawnTime = 0;
+            requestAnimationFrame(gameLoop); 
+        }
+
+        window.onload = function() {
+            requestAnimationFrame(gameLoop);
+            setupTouchControls();
+        };
+
+        // --- 9. タッチ操作のための関数 (モバイル対応) ---
+        let isDragging = false;
+        let lastTouchX = 0;
+        let lastTouchY = 0;
+
+        function setupTouchControls() {
+            canvas.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                
+                // タッチ位置をプレイヤーの中心とする
+                player.x = touch.clientX - rect.left;
+                player.y = touch.clientY - rect.top;
+                
+                lastTouchX = touch.clientX - rect.left;
+                lastTouchY = touch.clientY - rect.top;
+                
+                // タッチ開始時も射撃を試みる (モバイルでのタップ射撃)
+                tryShoot(); 
+
+                e.preventDefault();
+            }, { passive: false });
+
+            canvas.addEventListener('touchmove', (e) => {
+                if (!isDragging || isGameOver) return;
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                
+                const currentTouchX = touch.clientX - rect.left;
+                const currentTouchY = touch.clientY - rect.top;
+                
+                // プレイヤーを指の位置に追従させる
+                player.x = currentTouchX; 
+                player.y = currentTouchY;
+
+                // 画面外に出ないように制限を再適用
+                player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+                player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+                
+                // ドラッグ中も連射
+                tryShoot();
+
+                lastTouchX = currentTouchX;
+                lastTouchY = currentTouchY;
+
+                e.preventDefault();
+            }, { passive: false });
+
+            canvas.addEventListener('touchend', () => {
+                isDragging = false;
+            });
+        }
+
+        // 画面サイズ変更時のキャンバスのリサイズ（レスポンシブ対応）
+        function resizeCanvas() {
+            const container = document.querySelector('.game-container');
+            const containerWidth = container.clientWidth;
+
+            const newWidth = Math.min(containerWidth, 800);
+            const newHeight = (newWidth / 4) * 3; 
+
+            canvas.width = newWidth;
+            canvas.height = newHeight;
+            
+            player.x = canvas.width / 2;
+            player.y = canvas.height - 50;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas(); 
+        
+    </script>
+</body>
+</html>
