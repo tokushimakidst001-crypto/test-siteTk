@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YMM4台本作成ツール (更新版)</title>
+    <title>YMM4台本作成ツール (インポート機能付き)</title>
     <style>
         /* --- スタイルシート --- */
         body {
@@ -108,6 +108,32 @@
             border: 1px dashed #007bff;
             border-radius: 5px;
         }
+
+        /* インポートエリアのスタイル */
+        .import-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px dashed #28a745;
+            border-radius: 5px;
+            align-items: center;
+        }
+        .import-controls input[type="file"] {
+            flex-grow: 1;
+            margin-bottom: 0;
+            border: none;
+            padding: 5px;
+        }
+        .import-controls button {
+            width: auto;
+            flex-grow: 0;
+            margin-bottom: 0;
+            background-color: #6f42c1;
+        }
+        .import-controls button:hover {
+            background-color: #5a37a1;
+        }
     </style>
 </head>
 <body>
@@ -121,6 +147,12 @@
             <button onclick="updateCharacters()">キャラクターリストを更新</button>
         </div>
         
+        <div class="import-controls">
+            <label for="csvFileInput" style="margin-bottom: 0;">台本を読み込む (.csv):</label>
+            <input type="file" id="csvFileInput" accept=".csv">
+            <button onclick="importCSV()">台本をインポート</button>
+        </div>
+
         <label for="character">キャラクター:</label>
         <select id="character">
             </select>
@@ -300,6 +332,13 @@
             // 編集確定/キャンセル処理
             const saveEdit = () => {
                 const newValue = inputElement.value.trim();
+                // キャラクターフィールドの場合、空は許可しない
+                if (field === 'character' && !newValue) {
+                    alert('キャラクター名は空にできません。');
+                    renderScriptTable();
+                    return;
+                }
+
                 if (newValue !== originalValue) {
                     scriptData[index][field] = newValue;
                 }
@@ -367,6 +406,72 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
+        
+        // CSVのインポート処理
+        function importCSV() {
+            const fileInput = document.getElementById('csvFileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('CSVファイルを選択してください。');
+                return;
+            }
+
+            if (scriptData.length > 0 && !confirm('現在の台本データは消去され、インポートした内容に置き換わります。続行しますか？')) {
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const csvText = e.target.result;
+                try {
+                    const importedData = parseCSV(csvText);
+                    scriptData = importedData;
+                    renderScriptTable();
+                    alert(`台本 ${importedData.length} 行を正常にインポートしました。`);
+                } catch (error) {
+                    console.error("CSVパースエラー:", error);
+                    alert('CSVファイルの読み込み中にエラーが発生しました。ファイル形式を確認してください。');
+                }
+            };
+            // UTF-8として読み込み (BOM付きも対応)
+            reader.readAsText(file, 'UTF-8');
+            fileInput.value = ''; // ファイル選択をリセット
+        }
+        
+        // CSVテキストをパースする関数 (簡単な実装)
+        // YMM4形式の「キャラクター,"字幕内容"」を想定。字幕内容はダブルクォートで囲まれ、内部の"は""でエスケープされている。
+        function parseCSV(text) {
+            const lines = text.trim().split(/\r?\n/);
+            const result = [];
+
+            lines.forEach(line => {
+                // 1. 最初のカンマを区切りとして、キャラクターと字幕内容に分ける
+                const firstCommaIndex = line.indexOf(',');
+                if (firstCommaIndex === -1) {
+                    // 区切りがない行はスキップ
+                    return; 
+                }
+
+                const character = line.substring(0, firstCommaIndex).trim();
+                let dialogue = line.substring(firstCommaIndex + 1).trim();
+
+                // 2. 字幕内容 (dialogue) の処理
+                if (dialogue.startsWith('"') && dialogue.endsWith('"')) {
+                    // ダブルクォーテーションで囲まれている場合、外側のクォーテーションを削除し、二重クォーテーションを元に戻す
+                    dialogue = dialogue.substring(1, dialogue.length - 1);
+                    dialogue = dialogue.replace(/""/g, '"');
+                }
+                
+                // 3. データとして追加 (キャラクター名が空の場合はスキップ)
+                if (character) {
+                    result.push({ character: character, dialogue: dialogue });
+                }
+            });
+
+            return result;
+        }
+
 
         // ページロード時に実行
         window.onload = loadCharacters;
