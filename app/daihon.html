@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YMM4台本作成ツール</title>
+    <style>
+        /* --- スタイルシート --- */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #007bff;
+            text-align: center;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+        select, textarea, button, input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box; /* paddingを含めたサイズで計算 */
+        }
+        select {
+            height: 40px;
+            background-color: #e9ecef;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        #scriptTable {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        #scriptTable th, #scriptTable td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        #scriptTable th {
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .controls button {
+            flex-grow: 1;
+        }
+        .char-settings {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px dashed #007bff;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗣️ YMM4台本作成ツール</h1>
+
+        <div class="char-settings">
+            <h2>キャラクター設定</h2>
+            <label for="charInput">キャラクター名を追加（カンマ区切りで入力してください）:</label>
+            <input type="text" id="charInput" placeholder="例: 霊夢, 魔理沙, 解説">
+            <button onclick="updateCharacters()">キャラクターリストを更新</button>
+        </div>
+        
+        <label for="character">キャラクター:</label>
+        <select id="character">
+            </select>
+
+        <label for="dialogue">字幕内容:</label>
+        <textarea id="dialogue" placeholder="話す内容を入力してください"></textarea>
+
+        <button onclick="addScriptLine()">台本に追加</button>
+
+        <h2>📝 台本プレビュー</h2>
+        <table id="scriptTable">
+            <thead>
+                <tr>
+                    <th>キャラクター</th>
+                    <th>字幕内容</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="scriptBody">
+                </tbody>
+        </table>
+
+        <div class="controls">
+            <button style="background-color: #007bff;" onclick="exportCSV()">CSVエクスポート</button>
+            <button style="background-color: #dc3545;" onclick="clearScript()">全消去</button>
+        </div>
+    </div>
+
+    <script>
+        // --- JavaScript ---
+
+        const CHARACTER_STORAGE_KEY = 'ymm4_characters';
+        let scriptData = [];
+        const scriptBody = document.getElementById('scriptBody');
+        const charSelect = document.getElementById('character');
+        const charInput = document.getElementById('charInput');
+
+        // ローカルストレージからキャラクターリストを読み込み、更新する
+        function loadCharacters() {
+            const storedChars = localStorage.getItem(CHARACTER_STORAGE_KEY);
+            if (storedChars) {
+                charInput.value = storedChars;
+            } else {
+                // 初期値
+                charInput.value = "霊夢, 魔理沙, 解説";
+            }
+            updateCharacterSelect();
+        }
+
+        // キャラクター入力フィールドの内容に基づき、選択肢を更新する
+        function updateCharacterSelect() {
+            const charNames = charInput.value.split(',').map(name => name.trim()).filter(name => name !== '');
+            localStorage.setItem(CHARACTER_STORAGE_KEY, charNames.join(', '));
+            
+            // 選択肢をクリア
+            charSelect.innerHTML = '';
+
+            if (charNames.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'キャラクターを追加してください';
+                charSelect.appendChild(option);
+                return;
+            }
+
+            // 新しい選択肢を追加
+            charNames.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                charSelect.appendChild(option);
+            });
+        }
+
+        // キャラクターリスト更新ボタンの処理
+        function updateCharacters() {
+            updateCharacterSelect();
+            alert('キャラクターリストを更新しました。');
+        }
+
+        // 台本に一行追加
+        function addScriptLine() {
+            const character = charSelect.value;
+            const dialogue = document.getElementById('dialogue').value.trim();
+
+            if (!character || !dialogue) {
+                alert('キャラクターを選択し、字幕内容を入力してください。');
+                return;
+            }
+
+            const newLine = { character, dialogue };
+            scriptData.push(newLine);
+            
+            // フォームをリセット
+            document.getElementById('dialogue').value = '';
+            
+            renderScriptTable();
+        }
+
+        // 台本テーブルをレンダリング（再描画）
+        function renderScriptTable() {
+            scriptBody.innerHTML = '';
+            scriptData.forEach((line, index) => {
+                const row = scriptBody.insertRow();
+                
+                // キャラクター名
+                let charCell = row.insertCell();
+                charCell.textContent = line.character;
+                
+                // 字幕内容 (長い場合は省略)
+                let dialogueCell = row.insertCell();
+                dialogueCell.textContent = line.dialogue;
+
+                // 操作ボタン
+                let actionCell = row.insertCell();
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = '削除';
+                deleteBtn.style.backgroundColor = '#6c757d';
+                deleteBtn.style.width = 'auto';
+                deleteBtn.style.margin = '0';
+                deleteBtn.onclick = () => deleteLine(index);
+                actionCell.appendChild(deleteBtn);
+            });
+        }
+
+        // 指定した行を削除
+        function deleteLine(index) {
+            scriptData.splice(index, 1);
+            renderScriptTable();
+        }
+
+        // 台本を全消去
+        function clearScript() {
+            if (confirm('台本の内容をすべて消去してもよろしいですか？')) {
+                scriptData = [];
+                renderScriptTable();
+            }
+        }
+
+        // CSV形式でエクスポート
+        function exportCSV() {
+            if (scriptData.length === 0) {
+                alert('エクスポートする台本データがありません。');
+                return;
+            }
+
+            // YMM4の形式に合わせる: ヘッダーは不要
+            // const header = "キャラクター,字幕内容\n";
+            const header = "";
+
+            const csvContent = scriptData.map(line => {
+                // CSVとして正しく扱うため、内容にダブルクォーテーション("), カンマ(,), 改行が入る可能性を考慮し、全体をダブルクォーテーションで囲み、内容中のダブルクォーテーションは二重にする
+                const safeDialogue = line.dialogue.replace(/"/g, '""');
+                return `${line.character},"${safeDialogue}"`;
+            }).join('\n');
+
+            const fullCSV = header + csvContent;
+            
+            // Blobを作成し、ダウンロードリンクを生成
+            const blob = new Blob(["\ufeff", fullCSV], { type: 'text/csv;charset=utf-8;' }); // BOM付きUTF-8
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'ymm4_script_' + new Date().toISOString().slice(0, 10) + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // ページロード時に実行
+        window.onload = loadCharacters;
+    </script>
+</body>
+</html>
