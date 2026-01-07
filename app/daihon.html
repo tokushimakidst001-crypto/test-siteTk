@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YMM4台本作成ツール</title>
+    <title>YMM4台本作成ツール (更新版)</title>
     <style>
         /* --- スタイルシート --- */
         body {
@@ -39,7 +39,7 @@
             margin-bottom: 20px;
             border: 1px solid #ccc;
             border-radius: 5px;
-            box-sizing: border-box; /* paddingを含めたサイズで計算 */
+            box-sizing: border-box;
         }
         select {
             height: 40px;
@@ -73,6 +73,27 @@
             background-color: #f8f9fa;
             color: #333;
         }
+        /* インライン編集可能セル */
+        #scriptTable td.editable {
+            cursor: pointer;
+            transition: background-color 0.1s;
+        }
+        #scriptTable td.editable:hover {
+            background-color: #fffbe6; /* ホバーで薄い黄色 */
+        }
+        /* インライン編集中の入力ボックス */
+        #scriptTable td > textarea, #scriptTable td > select {
+            width: 100%;
+            height: auto;
+            min-height: 40px;
+            padding: 5px;
+            margin: 0;
+            border: 1px solid #007bff;
+            box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+            border-radius: 3px;
+            box-sizing: border-box;
+        }
+
         .controls {
             display: flex;
             gap: 10px;
@@ -105,11 +126,11 @@
             </select>
 
         <label for="dialogue">字幕内容:</label>
-        <textarea id="dialogue" placeholder="話す内容を入力してください"></textarea>
+        <textarea id="dialogue" placeholder="話す内容を入力してください。Enterで追加、Shift+Enterで改行。" onkeydown="handleInputKey(event)"></textarea>
 
         <button onclick="addScriptLine()">台本に追加</button>
 
-        <h2>📝 台本プレビュー</h2>
+        <h2>📝 台本プレビュー（クリックで編集）</h2>
         <table id="scriptTable">
             <thead>
                 <tr>
@@ -136,6 +157,8 @@
         const scriptBody = document.getElementById('scriptBody');
         const charSelect = document.getElementById('character');
         const charInput = document.getElementById('charInput');
+        const dialogueTextarea = document.getElementById('dialogue');
+        let currentCharacters = []; // 現在のキャラクターリストを保持
 
         // ローカルストレージからキャラクターリストを読み込み、更新する
         function loadCharacters() {
@@ -151,13 +174,13 @@
 
         // キャラクター入力フィールドの内容に基づき、選択肢を更新する
         function updateCharacterSelect() {
-            const charNames = charInput.value.split(',').map(name => name.trim()).filter(name => name !== '');
-            localStorage.setItem(CHARACTER_STORAGE_KEY, charNames.join(', '));
+            currentCharacters = charInput.value.split(',').map(name => name.trim()).filter(name => name !== '');
+            localStorage.setItem(CHARACTER_STORAGE_KEY, currentCharacters.join(', '));
             
             // 選択肢をクリア
             charSelect.innerHTML = '';
 
-            if (charNames.length === 0) {
+            if (currentCharacters.length === 0) {
                 const option = document.createElement('option');
                 option.value = '';
                 option.textContent = 'キャラクターを追加してください';
@@ -166,7 +189,7 @@
             }
 
             // 新しい選択肢を追加
-            charNames.forEach(name => {
+            currentCharacters.forEach(name => {
                 const option = document.createElement('option');
                 option.value = name;
                 option.textContent = name;
@@ -178,12 +201,23 @@
         function updateCharacters() {
             updateCharacterSelect();
             alert('キャラクターリストを更新しました。');
+            renderScriptTable(); // 編集ボックスが残っていた場合に再描画
+        }
+
+        // 字幕内容のキーボード操作ハンドリング
+        function handleInputKey(event) {
+            // Enterキーのみが押された場合
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault(); // デフォルトの改行を防ぐ
+                addScriptLine(); // 台本に追加を実行
+            }
+            // Shift + Enterの場合はデフォルトの改行を許可
         }
 
         // 台本に一行追加
         function addScriptLine() {
             const character = charSelect.value;
-            const dialogue = document.getElementById('dialogue').value.trim();
+            const dialogue = dialogueTextarea.value.trim();
 
             if (!character || !dialogue) {
                 alert('キャラクターを選択し、字幕内容を入力してください。');
@@ -194,7 +228,7 @@
             scriptData.push(newLine);
             
             // フォームをリセット
-            document.getElementById('dialogue').value = '';
+            dialogueTextarea.value = '';
             
             renderScriptTable();
         }
@@ -205,13 +239,18 @@
             scriptData.forEach((line, index) => {
                 const row = scriptBody.insertRow();
                 
-                // キャラクター名
+                // キャラクター名セル (編集可能)
                 let charCell = row.insertCell();
                 charCell.textContent = line.character;
+                charCell.classList.add('editable');
+                charCell.onclick = () => editCell(index, 'character', charCell);
                 
-                // 字幕内容 (長い場合は省略)
+                // 字幕内容セル (編集可能)
                 let dialogueCell = row.insertCell();
-                dialogueCell.textContent = line.dialogue;
+                // プレビューでは改行を<br>に変換して表示
+                dialogueCell.innerHTML = line.dialogue.replace(/\n/g, '<br>');
+                dialogueCell.classList.add('editable');
+                dialogueCell.onclick = () => editCell(index, 'dialogue', dialogueCell);
 
                 // 操作ボタン
                 let actionCell = row.insertCell();
@@ -223,6 +262,66 @@
                 deleteBtn.onclick = () => deleteLine(index);
                 actionCell.appendChild(deleteBtn);
             });
+        }
+
+        // セルを編集モードにする
+        function editCell(index, field, cell) {
+            // 既に編集中の場合は何もしない
+            if (cell.querySelector('textarea') || cell.querySelector('select')) {
+                return;
+            }
+
+            const originalValue = scriptData[index][field];
+            cell.innerHTML = ''; // セルの中身を消去
+
+            let inputElement;
+
+            if (field === 'character') {
+                // キャラクター名の編集: プルダウン
+                const select = document.createElement('select');
+                select.style.marginBottom = '0';
+                currentCharacters.forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    select.appendChild(option);
+                });
+                select.value = originalValue;
+                inputElement = select;
+
+            } else {
+                // 字幕内容の編集: テキストエリア
+                const textarea = document.createElement('textarea');
+                textarea.value = originalValue;
+                textarea.style.marginBottom = '0';
+                inputElement = textarea;
+            }
+
+            // 編集確定/キャンセル処理
+            const saveEdit = () => {
+                const newValue = inputElement.value.trim();
+                if (newValue !== originalValue) {
+                    scriptData[index][field] = newValue;
+                }
+                renderScriptTable(); // テーブル全体を再描画して、編集モードを終了
+            };
+            
+            // inputElementをセルに追加
+            cell.appendChild(inputElement);
+            inputElement.focus();
+            
+            // テキストエリア/プルダウンからフォーカスが外れたら保存
+            inputElement.onblur = saveEdit;
+
+            // テキストエリアの場合、Enterキーで保存（Shift+Enterは改行のため区別）
+            if (field === 'dialogue') {
+                inputElement.onkeydown = (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        saveEdit(); // 編集を保存
+                    }
+                };
+            }
         }
 
         // 指定した行を削除
@@ -247,7 +346,6 @@
             }
 
             // YMM4の形式に合わせる: ヘッダーは不要
-            // const header = "キャラクター,字幕内容\n";
             const header = "";
 
             const csvContent = scriptData.map(line => {
